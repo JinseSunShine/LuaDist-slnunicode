@@ -405,12 +405,54 @@ static int str_dump (lua_State *L) {
 	luaL_checktype(L, 1, LUA_TFUNCTION);
 	lua_settop(L, 1);
 	luaL_buffinit(L,&b);
-	if (lua_dump(L, writer, &b) != 0)
+	if (lua_dump(L, writer, &b, 0) != 0)
 		luaL_error(L, "unable to dump given function");
 	luaL_pushresult(&b);
 	return 1;
 }
 
+/*
+** maximum number of captures that a pattern can do during
+** pattern-matching. This limit is arbitrary.
+*/
+#if !defined(LUA_MAXCAPTURES)
+#define LUA_MAXCAPTURES		32
+#endif
+
+/*
+** LUA_INTFRMLEN is the length modifier for integer conversions in
+** 'string.format'; LUA_INTFRM_T is the integer type corresponding to
+** the previous length
+*/
+#if !defined(LUA_INTFRMLEN)	/* { */
+#if defined(LUA_USE_LONGLONG)
+
+#define LUA_INTFRMLEN           "ll"
+#define LUA_INTFRM_T            long long
+
+#else
+
+#define LUA_INTFRMLEN           "l"
+#define LUA_INTFRM_T            long
+
+#endif
+#endif				/* } */
+
+#define MAX_UINTFRM	((lua_Number)(~(unsigned LUA_INTFRM_T)0))
+#define MAX_INTFRM	((lua_Number)((~(unsigned LUA_INTFRM_T)0)/2))
+#define MIN_INTFRM	(-(lua_Number)((~(unsigned LUA_INTFRM_T)0)/2) - 1)
+
+/*
+** LUA_FLTFRMLEN is the length modifier for float conversions in
+** 'string.format'; LUA_FLTFRM_T is the float type corresponding to
+** the previous length
+*/
+#if !defined(LUA_FLTFRMLEN)
+
+#define LUA_FLTFRMLEN           ""
+#define LUA_FLTFRM_T            double
+
+#endif
 
 
 /*
@@ -1282,7 +1324,7 @@ int ext_uni_match ( void *state, const char *s, size_t n,
 }
 #endif
 
-static const luaL_reg uniclib[] = {
+static const luaL_Reg uniclib[] = {
 	{"byte", unic_byte}, /* no cluster ! */
 	{"char", unic_char},
 	{"dump", str_dump},
@@ -1319,11 +1361,19 @@ static void createmetatable (lua_State *L) {
 */
 LUALIB_API int luaopen_unicode (lua_State *L) {
 	/* register unicode itself so require("unicode") works */
-	luaL_register(L, SLN_UNICODENAME,
-		uniclib + (sizeof uniclib/sizeof uniclib[0] - 1)); /* empty func list */
-	/* lua_pop(L, 1); http://lua-users.org/lists/lua-l/2007-11/msg00070.html */
-	lua_pushinteger(L, MODE_ASCII);
-	luaL_register(L, SLN_UNICODENAME ".ascii", uniclib);
+	//luaL_register(L, SLN_UNICODENAME,
+	//	uniclib + (sizeof uniclib/sizeof uniclib[0] - 1)); /* empty func list */
+	///* lua_pop(L, 1); http://lua-users.org/lists/lua-l/2007-11/msg00070.html */
+	//lua_pushinteger(L, MODE_ASCII);
+	//luaL_register(L, SLN_UNICODENAME ".ascii", uniclib);
+    lua_newtable(L);
+#define PUSHLIB(mode, name) \
+    ( lua_newtable(L), \
+    lua_pushinteger(L, MODE_##mode), \
+    luaL_setfuncs(L, uniclib, 1), \
+    lua_setfield(L, -2, #name) )
+        PUSHLIB(ASCII, ascii);
+
 #ifdef SLNUNICODE_AS_STRING
 #if defined(LUA_COMPAT_GFIND)
 	lua_getfield(L, -1, "gmatch");
@@ -1332,14 +1382,20 @@ LUALIB_API int luaopen_unicode (lua_State *L) {
 #ifdef STRING_WITH_METAT
 	createmetatable(L);
 #endif
-	lua_setfield(L, LUA_GLOBALSINDEX, "string");
+	//lua_setfield(L, LUA_GLOBALSINDEX, "string");
+    lua_setglobal(L, "string");
 #endif
-	lua_pushinteger(L, MODE_LATIN);
+	/*lua_pushinteger(L, MODE_LATIN);
 	luaL_register(L, SLN_UNICODENAME ".latin1", uniclib);
 	lua_pushinteger(L, MODE_GRAPH);
 	luaL_register(L, SLN_UNICODENAME ".grapheme", uniclib);
 	lua_pushinteger(L, MODE_UTF8);
-	luaL_register(L, SLN_UNICODENAME ".utf8", uniclib);
+	luaL_register(L, SLN_UNICODENAME ".utf8", uniclib);*/
+    PUSHLIB(LATIN, latin1);
+    PUSHLIB(GRAPH, grapheme);
+    PUSHLIB(UTF8, utf8);
+#undef PUSHLIB
+
 #ifdef WANT_EXT_MATCH
 	{
 		unsigned i;
@@ -1360,7 +1416,7 @@ LUALIB_API int luaopen_unicode (lua_State *L) {
 		}
 	}
 #endif
-	lua_settop(L, 2); /* http://lua-users.org/lists/lua-l/2007-11/msg00070.html */
+	//lua_settop(L, 2); /* http://lua-users.org/lists/lua-l/2007-11/msg00070.html */
 	return 1;
 }
 
